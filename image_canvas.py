@@ -1,32 +1,29 @@
-from random import random
+import random
 from typing import List
+
 from eckity.algorithms.simple_evolution import SimpleEvolution
-from eckity.breeders.simple_breeder import SimpleBreeder
 from eckity.creators.creator import Creator
-from eckity.creators.ga_creators.bit_string_vector_creator import GABitStringVectorCreator
 from eckity.evaluators.simple_individual_evaluator import SimpleIndividualEvaluator
 from eckity.fitness.fitness import Fitness
-from eckity.genetic_operators.crossovers.vector_k_point_crossover import VectorKPointsCrossover
-from eckity.genetic_operators.mutations.vector_random_mutation import BitStringVectorNFlipMutation
+from eckity.fitness.simple_fitness import SimpleFitness
+from eckity.genetic_operators.genetic_operator import GeneticOperator
 from eckity.genetic_operators.selections.tournament_selection import TournamentSelection
 from eckity.individual import Individual
-from eckity.statistics.best_average_worst_statistics import BestAverageWorstStatistics
-from eckity.subpopulation import Subpopulation
-from eckity.termination_checkers.threshold_from_target_termination_checker import ThresholdFromTargetTerminationChecker
 from tkinter import *
 import numpy as np
+from eckity.statistics.best_average_worst_statistics import BestAverageWorstStatistics
+from eckity.subpopulation import Subpopulation
 from numpy import sqrt
 from PIL import Image
 
-class ImageCanvas:
-    def __init__(self, image_array: List[List[tuple]]):
-        self.image_array = image_array
+from Pixel import Pixel
+
 
 
 class ImageIndividual(Individual):
-    def __init__(self, image_canvas: ImageCanvas, fitness: Fitness):
+    def __init__(self, image_array: List[List[tuple]], fitness: Fitness):
         super().__init__(fitness)
-        self.image_canvas = image_canvas
+        self.image_array = image_array
 
     def show(self):
         pass
@@ -36,6 +33,8 @@ class ImageCreator(Creator):
     def __init__(self):
         super().__init__()
         self.target = self.get_target_image_array("mona_lisa.png")
+        self.height = len(self.target)
+        self.width = len(self.target[0])
 
     def get_target_image_array(self, path):
         img = Image.open(path)
@@ -58,20 +57,19 @@ class ImageCreator(Creator):
         return new_arr
 
     def create_individuals(self, n_individuals, higher_is_better):
-        return [ImageIndividual(self.random_strategy(), SimpleFitness(higher_is_better=higher_is_better)) for _ in
+        return [ImageIndividual(self.random_image_array(), SimpleFitness(higher_is_better=higher_is_better)) for _ in
                 range(n_individuals)]
 
-    def random_strategy(self):
-        image_array = [[self.random_action() for _ in range(Strategy.hard_hands_dim[1])] for _ in
-                      range(Strategy.hard_hands_dim[0])]
+    def random_image_array(self):
+        return self.create_random_array()
 
-        return Strategy(hard_hands=hard_hands, soft_hands=soft_hands)
 
     def create_random_array(self):
         pixel_array = [[0 for _ in range(self.width)] for _ in range(self.height)]
         for i, row in enumerate(pixel_array):
             for j, element in enumerate(row):
                 pixel_array[i][j] = self.get_random_pixel(i, j)
+
         return pixel_array
 
     def get_pixel_distance(self, p1, p2):
@@ -88,6 +86,96 @@ class ImageCreator(Creator):
         pixel_dist = self.get_pixel_distance(curr_pixel, target_corresponding_pixel)
         return Pixel(curr_pixel, pixel_dist)
 
-    @staticmethod
-    def random_action():
-        return random.choice(list(Action))
+class ImageEvaluator(SimpleIndividualEvaluator):
+    def __init__(self):
+        super().__init__()
+
+    def _evaluate_individual(self, individual: ImageIndividual):
+        dist = 0
+        for i, row in enumerate(individual.image_array):
+            for j, element in enumerate(row):
+                dist += element.dist
+        dist /= (len(individual.image_array) * (len(individual.image_array[0])))
+        return dist
+
+class ImageCrossover(GeneticOperator):
+    def __init__(self, probability=1, arity=2, events=None):
+        super().__init__(probability, arity, events)
+
+    def apply(self, individuals):
+        children = []
+
+        for i in range(len(individuals) - 1):
+            individual1 = individuals[i]
+            individual2 = individuals[i + 1]
+            children.append(self.create_child(individual1, individual2))
+
+        return children
+
+    def create_child(self, individual_parent1, individual_parent2):
+        image_array = []
+        height = len(individual_parent1.image_array)
+        width = len(individual_parent1.image_array[0])
+
+        for i in range(height):
+            row = []
+            for j in range(width):
+                coin_toss = random.random()
+                if coin_toss < 0.5:
+                    element = individual_parent1.image_array[i][j]
+                else:
+                    element = individual_parent2.image_array[i][j]
+
+                row.append(element)
+            image_array.append(row)
+
+        return ImageIndividual(image_array, SimpleFitness(higher_is_better=False))
+
+class ImageStatistics(BestAverageWorstStatistics):
+    def __init__(self):
+        super().__init__()
+
+    def write_statistics(self, sender, data_dict):
+        super().write_statistics(sender, data_dict)
+        best_individual = data_dict["population"].sub_populations[0].get_best_individual()
+        generation = data_dict["generation_num"]
+
+
+def evolution_algo(population_size=30, n_generations=50, elitism_rate=0.01, individuals=None):
+    return SimpleEvolution(
+        population=Subpopulation(
+            evaluator=ImageEvaluator(),
+            creators=ImageCreator(),
+            pcr=None,
+            operators_sequence=[
+                ImageCrossover()
+            ],
+            selection_methods=[
+                (TournamentSelection(tournament_size=2, higher_is_better=True, events=None), 1)
+            ],
+            elitism_rate=elitism_rate,
+            population_size=population_size,
+            individuals=individuals,
+            higher_is_better=True
+        ),
+        max_generation=n_generations,
+        max_workers=None,  # uses all available cores
+        statistics=ImageStatistics(),
+    )
+
+evolution_algo().evolve()
+
+exit()
+
+creator = ImageCreator()
+population = creator.create_individuals(10, False)
+
+evaluator = ImageEvaluator()
+score = evaluator._evaluate_individual(population[0])
+
+crossover = ImageCrossover()
+
+
+next_gen = crossover.apply(population)
+score_2 = evaluator._evaluate_individual(next_gen[0])
+
