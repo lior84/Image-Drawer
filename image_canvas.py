@@ -1,6 +1,5 @@
 import random
 from typing import List
-
 from eckity.algorithms.simple_evolution import SimpleEvolution
 from eckity.creators.creator import Creator
 from eckity.evaluators.simple_individual_evaluator import SimpleIndividualEvaluator
@@ -14,12 +13,9 @@ import numpy as np
 from eckity.statistics.best_average_worst_statistics import BestAverageWorstStatistics
 from eckity.subpopulation import Subpopulation
 from numpy import sqrt
-from PIL import Image
-
+from PIL import Image, ImageDraw
 from ImageBreeder import ImageBreeder
 from Pixel import Pixel
-
-
 
 class ImageIndividual(Individual):
     def __init__(self, image_array: List[List[tuple]], dist, fitness: Fitness):
@@ -40,6 +36,12 @@ class ImageCreator(Creator):
 
     def get_target_image_array(self, path):
         img = Image.open(path)
+
+        self.width = 30
+        self.height = 45
+        img = img.resize((self.width, self.height), Image.ANTIALIAS)
+
+
         img.load()
 
         pixel_values = list(img.getdata())
@@ -62,10 +64,8 @@ class ImageCreator(Creator):
         individuals = []
         for _ in range(n_individuals):
             random_array, dist = self.random_image_array()
-
-            print(random_array[0][0])
-            print(dist)
             individuals.append(ImageIndividual(random_array, dist,  SimpleFitness(higher_is_better=higher_is_better)))
+
         return individuals
 
     def random_image_array(self):
@@ -123,7 +123,6 @@ class ImageCrossover(GeneticOperator):
         image_array = []
         height = len(individual_parent1.image_array)
         width = len(individual_parent1.image_array[0])
-
         avg_dist = 0
         for i in range(height):
             row = []
@@ -138,7 +137,7 @@ class ImageCrossover(GeneticOperator):
             image_array.append(row)
         avg_dist /= (height * width)
 
-        return ImageIndividual(image_array, SimpleFitness(higher_is_better=False), avg_dist)
+        return ImageIndividual(image_array, avg_dist, SimpleFitness(higher_is_better=False))
 
 class ImageStatistics(BestAverageWorstStatistics):
     def __init__(self):
@@ -149,8 +148,29 @@ class ImageStatistics(BestAverageWorstStatistics):
         best_individual = data_dict["population"].sub_populations[0].get_best_individual()
         generation = data_dict["generation_num"]
 
+        if generation % 30 == 0:
+            self.print_image(best_individual)
 
-def evolution_algo(population_size=30, n_generations=50, elitism_rate=0.01, individuals=None):
+    def print_image(self, best_individual):
+        pixel_array = best_individual.image_array
+        img = Image.new("RGB", (len(pixel_array[0]), len(pixel_array)))
+        drawer = ImageDraw.Draw(img)
+
+
+
+        for y, row in enumerate(pixel_array):
+            for x, pixel in enumerate(row):
+                drawer.point((x, y), fill=pixel.rgb)
+
+        width = 100
+        height = 150
+        img = img.resize((width, height), Image.ANTIALIAS)
+
+        img.show()
+
+
+
+def evolution_algo(population_size=1000, n_generations=1000, elitism_rate=0.01, individuals=None):
     return SimpleEvolution(
         population=Subpopulation(
             evaluator=ImageEvaluator(),
@@ -160,7 +180,7 @@ def evolution_algo(population_size=30, n_generations=50, elitism_rate=0.01, indi
                 ImageCrossover(population_size)
             ],
             selection_methods=[
-                (TournamentSelection(tournament_size=2, higher_is_better=False, events=None), 1)
+                (TournamentSelection(tournament_size=100, higher_is_better=False, events=None), 1)
             ],
             elitism_rate=elitism_rate,
             population_size=population_size,
@@ -168,9 +188,9 @@ def evolution_algo(population_size=30, n_generations=50, elitism_rate=0.01, indi
             higher_is_better=False,
         ),
         max_generation=n_generations,
-        max_workers=None,  # uses all available cores
+        max_workers=None,
         statistics=ImageStatistics(),
-        breeder=ImageBreeder()
+        breeder=ImageBreeder(),
     )
 
 evolution_algo().evolve()
