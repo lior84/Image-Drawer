@@ -16,14 +16,16 @@ from eckity.subpopulation import Subpopulation
 from numpy import sqrt
 from PIL import Image
 
+from ImageBreeder import ImageBreeder
 from Pixel import Pixel
 
 
 
 class ImageIndividual(Individual):
-    def __init__(self, image_array: List[List[tuple]], fitness: Fitness):
+    def __init__(self, image_array: List[List[tuple]], dist, fitness: Fitness):
         super().__init__(fitness)
         self.image_array = image_array
+        self.dist = dist
 
     def show(self):
         pass
@@ -57,20 +59,28 @@ class ImageCreator(Creator):
         return new_arr
 
     def create_individuals(self, n_individuals, higher_is_better):
-        return [ImageIndividual(self.random_image_array(), SimpleFitness(higher_is_better=higher_is_better)) for _ in
-                range(n_individuals)]
+        individuals = []
+        for _ in range(n_individuals):
+            random_array, dist = self.random_image_array()
+
+            print(random_array[0][0])
+            print(dist)
+            individuals.append(ImageIndividual(random_array, dist,  SimpleFitness(higher_is_better=higher_is_better)))
+        return individuals
 
     def random_image_array(self):
         return self.create_random_array()
 
 
     def create_random_array(self):
+        avg_dist = 0
         pixel_array = [[0 for _ in range(self.width)] for _ in range(self.height)]
         for i, row in enumerate(pixel_array):
             for j, element in enumerate(row):
                 pixel_array[i][j] = self.get_random_pixel(i, j)
-
-        return pixel_array
+                avg_dist += pixel_array[i][j].dist
+        avg_dist /= (self.height * self.width)
+        return pixel_array, avg_dist
 
     def get_pixel_distance(self, p1, p2):
         return sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2 + (p1[2] - p2[2]) ** 2)
@@ -91,32 +101,30 @@ class ImageEvaluator(SimpleIndividualEvaluator):
         super().__init__()
 
     def _evaluate_individual(self, individual: ImageIndividual):
-        dist = 0
-        for i, row in enumerate(individual.image_array):
-            for j, element in enumerate(row):
-                dist += element.dist
-        dist /= (len(individual.image_array) * (len(individual.image_array[0])))
-        return dist
+        return individual.dist
 
 class ImageCrossover(GeneticOperator):
-    def __init__(self, probability=1, arity=2, events=None):
+    def __init__(self, population_size , probability=1, arity=2, events=None):
         super().__init__(probability, arity, events)
+        self.population_size = population_size
 
     def apply(self, individuals):
-        children = []
-
-        for i in range(len(individuals) - 1):
-            individual1 = individuals[i]
-            individual2 = individuals[i + 1]
-            children.append(self.create_child(individual1, individual2))
-
-        return children
+        return self.create_child(individuals[0], individuals[1])
+        # children = []
+        # print(len(individuals))
+        # for i in range(len(individuals) - 1):
+        #     individual1 = individuals[i]
+        #     individual2 = individuals[i + 1]
+        #     children.append(self.create_child(individual1, individual2))
+        #
+        # return children
 
     def create_child(self, individual_parent1, individual_parent2):
         image_array = []
         height = len(individual_parent1.image_array)
         width = len(individual_parent1.image_array[0])
 
+        avg_dist = 0
         for i in range(height):
             row = []
             for j in range(width):
@@ -125,11 +133,12 @@ class ImageCrossover(GeneticOperator):
                     element = individual_parent1.image_array[i][j]
                 else:
                     element = individual_parent2.image_array[i][j]
-
+                avg_dist += element.dist
                 row.append(element)
             image_array.append(row)
+        avg_dist /= (height * width)
 
-        return ImageIndividual(image_array, SimpleFitness(higher_is_better=False))
+        return ImageIndividual(image_array, SimpleFitness(higher_is_better=False), avg_dist)
 
 class ImageStatistics(BestAverageWorstStatistics):
     def __init__(self):
@@ -148,19 +157,20 @@ def evolution_algo(population_size=30, n_generations=50, elitism_rate=0.01, indi
             creators=ImageCreator(),
             pcr=None,
             operators_sequence=[
-                ImageCrossover()
+                ImageCrossover(population_size)
             ],
             selection_methods=[
-                (TournamentSelection(tournament_size=2, higher_is_better=True, events=None), 1)
+                (TournamentSelection(tournament_size=2, higher_is_better=False, events=None), 1)
             ],
             elitism_rate=elitism_rate,
             population_size=population_size,
             individuals=individuals,
-            higher_is_better=True
+            higher_is_better=False,
         ),
         max_generation=n_generations,
         max_workers=None,  # uses all available cores
         statistics=ImageStatistics(),
+        breeder=ImageBreeder()
     )
 
 evolution_algo().evolve()
