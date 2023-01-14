@@ -1,8 +1,6 @@
 import random
-
 from eckity.breeders.breeder import Breeder
 from eckity.genetic_operators.selections.elitism_selection import ElitismSelection
-
 
 class ImageBreeder(Breeder):
     def __init__(self,
